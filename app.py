@@ -9,6 +9,7 @@ import torch
 def load_model():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model_path = "logesh1962/sms-spam-detector"
+    subfolder = "model_96plus"  # <-- ADD THIS LINE
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     model = AutoModelForSequenceClassification.from_pretrained(model_path).to(device)
     model.eval()
@@ -45,4 +46,5 @@ if st.button("Detect Spam!") and text.strip():
 
 # Footer
 st.sidebar.title("About")
+
 st.sidebar.info("Powered by RoBERTa fine-tuned on 50k SMS messages.")
