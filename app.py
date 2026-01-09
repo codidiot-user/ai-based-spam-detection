@@ -8,35 +8,52 @@ from firebase_admin import credentials, firestore
 import uuid
 import json
 
-# Initialize Firebase
+# --- FIXED FIREBASE INITIALIZATION ---
 if not firebase_admin._apps:
-    firebase_key = st.secrets["firebase_key"]
-    if isinstance(firebase_key, str):
-        firebase_key = json.loads(firebase_key)
-    # Fix escaped newlines in private_key
-    if 'private_key' in firebase_key:
-        firebase_key['private_key'] = firebase_key['private_key'].replace('\\n', '\n')
-    cred = credentials.Certificate(firebase_key)
-    firebase_admin.initialize_app(cred)
+    try:
+        # 1. Retrieve the secret
+        raw_key = st.secrets["firebase_key"]
 
-# Initialize Firebase
-if not firebase_admin._apps:
-    cred = credentials.Certificate(dict(st.secrets["firebase_key"]))
-    firebase_admin.initialize_app(cred)
+        # 2. Convert to a mutable Python dictionary
+        # If it's stored as a JSON string (rare), parse it. 
+        # If it's a Streamlit Secrets object (common), convert to dict.
+        if isinstance(raw_key, str):
+            firebase_creds = json.loads(raw_key)
+        else:
+            firebase_creds = dict(raw_key)
+
+        # 3. Fix the private key newlines
+        if "private_key" in firebase_creds:
+            firebase_creds["private_key"] = firebase_creds["private_key"].replace("\\n", "\n")
+
+        # 4. Initialize the App
+        cred = credentials.Certificate(firebase_creds)
+        firebase_admin.initialize_app(cred)
+        
+    except Exception as e:
+        st.error(f"Firebase Initialization Error: {e}")
+        st.stop() # Stop execution if DB fails
+
+# Get the database client
 db = firestore.client()
 
-# Load model
+# --- MODEL LOADING ---
 @st.cache_resource
 def load_model():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model_path = "logesh1962/sms-spam-detector"  # Files are in root!
+    model_path = "logesh1962/sms-spam-detector" 
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     model = AutoModelForSequenceClassification.from_pretrained(model_path)
     model.eval()
     return tokenizer, model, device
 
-tokenizer, model, device = load_model()
+try:
+    tokenizer, model, device = load_model()
+except Exception as e:
+    st.error(f"Error loading model: {e}")
+    st.stop()
 
+# --- UI & LOGIC ---
 st.title("🚀 Spam Detector")
 st.write("Paste your message below — I'll scan for spam/scams!")
 
@@ -68,46 +85,48 @@ if st.button("Detect Spam!") and text.strip():
     st.divider()
     st.write("**Was this prediction correct?**")
     
-    if 'feedback' not in st.session_state:
-        st.session_state.feedback = {}
+    # Use session state to store feedback status for the specific text
+    feedback_key = f"feedback_{hash(text)}"
     
     col1, col2 = st.columns(2)
-    with col1:
-        if st.button("✅ Correct"):
-            st.session_state.feedback[text] = label
-            # Save to Firebase
-            doc_ref = db.collection('feedback').document(str(uuid.uuid4()))
-            doc_ref.set({
-                'message': text.strip(),
-                'prediction': label,
-                'confidence': prob_spam,
-                'feedback': 'Correct',
-                'user_label': label,
-                'ip': "unknown",
-                'timestamp': firestore.SERVER_TIMESTAMP
-            })
-            st.success("✓ Thanks! We'll keep improving.")
     
-    with col2:
-        if st.button("❌ Wrong"):
-            corrected_label = "Legitimate" if label == "Spam/Fake" else "Spam/Fake"
-            st.session_state.feedback[text] = corrected_label
-            # Save to Firebase
-            doc_ref = db.collection('feedback').document(str(uuid.uuid4()))
-            doc_ref.set({
-                'message': text.strip(),
-                'prediction': label,
-                'confidence': prob_spam,
-                'feedback': 'Wrong',
-                'user_label': corrected_label,
-                'ip': "unknown",
-                'timestamp': firestore.SERVER_TIMESTAMP
-            })
-            st.success("✓ Thanks! We'll fix this.")
+    # Only show buttons if feedback hasn't been given for this specific text
+    if feedback_key not in st.session_state:
+        with col1:
+            if st.button("✅ Correct"):
+                # Save to Firebase
+                doc_ref = db.collection('feedback').document(str(uuid.uuid4()))
+                doc_ref.set({
+                    'message': text.strip(),
+                    'prediction': label,
+                    'confidence': prob_spam,
+                    'feedback': 'Correct',
+                    'user_label': label,
+                    'ip': "unknown",
+                    'timestamp': firestore.SERVER_TIMESTAMP
+                })
+                st.session_state[feedback_key] = True
+                st.rerun() # Rerun to update UI
+        
+        with col2:
+            if st.button("❌ Wrong"):
+                corrected_label = "Legitimate" if label == "Spam/Fake" else "Spam/Fake"
+                # Save to Firebase
+                doc_ref = db.collection('feedback').document(str(uuid.uuid4()))
+                doc_ref.set({
+                    'message': text.strip(),
+                    'prediction': label,
+                    'confidence': prob_spam,
+                    'feedback': 'Wrong',
+                    'user_label': corrected_label,
+                    'ip': "unknown",
+                    'timestamp': firestore.SERVER_TIMESTAMP
+                })
+                st.session_state[feedback_key] = True
+                st.rerun()
+    else:
+        st.success("✓ Thank you for your feedback!")
 
 # Footer
 st.sidebar.title("About")
 st.sidebar.info("Powered by RoBERTa fine-tuned on 50k SMS messages.")
-
-
-
