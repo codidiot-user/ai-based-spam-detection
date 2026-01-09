@@ -6,13 +6,16 @@ import torch
 import firebase_admin
 from firebase_admin import credentials, firestore
 import uuid
-import json  # Add this at the top if not already present
+import json
 
 # Initialize Firebase
 if not firebase_admin._apps:
     firebase_key = st.secrets["firebase_key"]
     if isinstance(firebase_key, str):
         firebase_key = json.loads(firebase_key)
+    # Fix escaped newlines in private_key
+    if 'private_key' in firebase_key:
+        firebase_key['private_key'] = firebase_key['private_key'].replace('\\n', '\n')
     cred = credentials.Certificate(firebase_key)
     firebase_admin.initialize_app(cred)
 
@@ -105,5 +108,6 @@ if st.button("Detect Spam!") and text.strip():
 # Footer
 st.sidebar.title("About")
 st.sidebar.info("Powered by RoBERTa fine-tuned on 50k SMS messages.")
+
 
 
