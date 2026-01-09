@@ -9,30 +9,25 @@ import uuid
 import json
 
 # --- FIXED FIREBASE INITIALIZATION ---
+# --- FIND THIS SECTION IN YOUR APP.PY AND REPLACE IT ---
+
+# Initialize Firebase
 if not firebase_admin._apps:
     try:
-        # 1. Retrieve the secret
-        raw_key = st.secrets["firebase_key"]
+        # 1. Get the secrets as a dictionary (mutable)
+        firebase_creds = dict(st.secrets["firebase_key"])
 
-        # 2. Convert to a mutable Python dictionary
-        # If it's stored as a JSON string (rare), parse it. 
-        # If it's a Streamlit Secrets object (common), convert to dict.
-        if isinstance(raw_key, str):
-            firebase_creds = json.loads(raw_key)
-        else:
-            firebase_creds = dict(raw_key)
-
-        # 3. Fix the private key newlines
+        # 2. THIS IS THE LINE YOU ASKED ABOUT (The Fix)
+        # It looks for "private_key" and fixes the newlines if needed
         if "private_key" in firebase_creds:
             firebase_creds["private_key"] = firebase_creds["private_key"].replace("\\n", "\n")
 
-        # 4. Initialize the App
+        # 3. Connect using the fixed credentials
         cred = credentials.Certificate(firebase_creds)
         firebase_admin.initialize_app(cred)
         
     except Exception as e:
-        st.error(f"Firebase Initialization Error: {e}")
-        st.stop() # Stop execution if DB fails
+        st.error(f"Failed to connect to Firebase: {e}")
 
 # Get the database client
 db = firestore.client()
@@ -130,3 +125,4 @@ if st.button("Detect Spam!") and text.strip():
 # Footer
 st.sidebar.title("About")
 st.sidebar.info("Powered by RoBERTa fine-tuned on 50k SMS messages.")
+
