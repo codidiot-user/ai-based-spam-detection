@@ -9,7 +9,7 @@ import uuid
 
 # Initialize Firebase
 if not firebase_admin._apps:
-    cred = credentials.Certificate(st.secrets["firebase_key"])
+    cred = credentials.Certificate(dict(st.secrets["firebase_key"]))
     firebase_admin.initialize_app(cred)
 db = firestore.client()
 
@@ -96,3 +96,4 @@ if st.button("Detect Spam!") and text.strip():
 # Footer
 st.sidebar.title("About")
 st.sidebar.info("Powered by RoBERTa fine-tuned on 50k SMS messages.")
+
