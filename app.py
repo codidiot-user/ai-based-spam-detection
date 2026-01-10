@@ -6,115 +6,115 @@ import torch
 import firebase_admin
 from firebase_admin import credentials, firestore
 import uuid
-import json
 
-# --- 1. SETUP FIREBASE (The Connection) ---
-# Check if we are already connected to avoid errors
+# --- 1. ROBUST FIREBASE SETUP ---
 if not firebase_admin._apps:
     try:
-        # Load the secrets
-        firebase_creds = dict(st.secrets["firebase_key"])
+        # Load secrets
+        key_dict = dict(st.secrets["firebase_key"])
+        if "private_key" in key_dict:
+            key_dict["private_key"] = key_dict["private_key"].replace("\\n", "\n")
         
-        # Fix the newlines in the private key
-        if "private_key" in firebase_creds:
-            firebase_creds["private_key"] = firebase_creds["private_key"].replace("\\n", "\n")
-            
-        # Connect to Firebase
-        cred = credentials.Certificate(firebase_creds)
+        # Connect
+        cred = credentials.Certificate(key_dict)
         firebase_admin.initialize_app(cred)
     except Exception as e:
-        st.error(f"❌ Connection Error: {e}")
+        st.error(f"❌ Critical Connection Error: {e}")
         st.stop()
 
-# Get the database client (THIS LINE IS CRITICAL)
+# Get Database Client
 db = firestore.client()
 
-# --- 2. LOAD AI MODEL ---
+# --- 2. LOAD MODEL ---
 @st.cache_resource
 def load_model():
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model_path = "logesh1962/sms-spam-detector" 
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     model = AutoModelForSequenceClassification.from_pretrained(model_path)
     model.eval()
-    return tokenizer, model, device
+    return tokenizer, model
 
 try:
-    tokenizer, model, device = load_model()
-except Exception as e:
-    st.error(f"Error loading model: {e}")
+    tokenizer, model = load_model()
+except:
+    st.error("Model failed to load.")
     st.stop()
 
-# --- 3. THE APP INTERFACE ---
-st.title("🚀 Spam Detector")
-st.write("Paste your message below — I'll scan for spam/scams!")
+# --- 3. UI & LOGIC ---
+st.title("🚀 Spam Detector (Live DB)")
 
-# Input Area
-text = st.text_area("Enter message:", height=100, placeholder="E.g., 'Win free iPhone! Click here...'")
+# Sidebar DB Test
+with st.sidebar:
+    st.header("Database Status")
+    if st.button("Test Connection"):
+        try:
+            ref = db.collection("feedback").add({"message": "Manual Test", "status": "Online"})
+            st.success(f"Connected! ID: {ref[1].id}")
+        except Exception as e:
+            st.error(f"Error: {e}")
 
-if st.button("Detect Spam!") and text.strip():
-    # Run Prediction
-    inputs = tokenizer(text, return_tensors='pt', truncation=True, padding=True, max_length=96).to(device)
+# Main Input
+text = st.text_area("Enter message:", height=100)
+
+if st.button("Analyze") and text:
+    # Predict
+    inputs = tokenizer(text, return_tensors='pt', truncation=True, padding=True, max_length=96)
     with torch.no_grad():
         outputs = model(**inputs)
-    prob_spam = torch.softmax(outputs.logits, dim=-1)[0][1].item()
-    label = "Spam/Fake" if prob_spam > 0.3 else "Legitimate"
+    prob = torch.softmax(outputs.logits, dim=-1)[0][1].item()
+    label = "Spam/Fake" if prob > 0.3 else "Legitimate"
     
-    # Show Results
-    st.subheader(f"**Result: {label}**")
-    st.metric("Spam Confidence", f"{prob_spam:.1%}")
+    # Store results in Session State so they persist
+    st.session_state['last_text'] = text
+    st.session_state['last_label'] = label
+    st.session_state['last_prob'] = prob
+    st.session_state['analyzed'] = True
+
+# Display Results & Feedback
+if st.session_state.get('analyzed'):
+    st.divider()
+    
+    # Show Prediction
+    lbl = st.session_state['last_label']
+    score = st.session_state['last_prob']
+    st.subheader(f"Result: {lbl} ({score:.1%})")
+    
+    st.write("---")
+    st.write("👇 **Click below to save to Database:**")
     
     col1, col2 = st.columns(2)
+    
+    # BUTTON 1: CORRECT
     with col1:
-        st.success("SAFE" if label == "Legitimate" else "🚨 ALERT")
-    with col2:
-        st.info(f"Score: {prob_spam:.4f}")
-    
-    if label == "Spam/Fake":
-        st.warning("⚠️ This looks scammy — avoid clicking links or replying!")
-
-    # --- 4. FEEDBACK SYSTEM ---
-    st.divider()
-    st.write("**Was this prediction correct?**")
-    
-    # Generate a unique ID for this specific prediction text
-    feedback_key = f"feedback_{hash(text)}"
-    
-    # Only show buttons if the user hasn't voted yet
-    if feedback_key not in st.session_state:
-        col_yes, col_no = st.columns(2)
-        
-        with col_yes:
-            if st.button("✅ Correct"):
-                # Save 'Correct' feedback to Firebase
-                db.collection('feedback').document(str(uuid.uuid4())).set({
-                    'message': text,
-                    'prediction': label,
-                    'confidence': prob_spam,
+        if st.button("✅ It is Correct"):
+            st.write("⏳ Saving...") # Debug message
+            try:
+                # Direct write - No complex logic
+                doc_ref = db.collection('feedback').document()
+                doc_ref.set({
+                    'message': st.session_state['last_text'],
+                    'prediction': lbl,
+                    'confidence': score,
                     'user_feedback': 'Correct',
                     'timestamp': firestore.SERVER_TIMESTAMP
                 })
-                st.session_state[feedback_key] = True
-                st.rerun()
+                st.success(f"Saved to DB! ID: {doc_ref.id}") # If you see this, IT WORKED.
+            except Exception as e:
+                st.error(f"Save Failed: {e}")
 
-        with col_no:
-            if st.button("❌ Wrong"):
-                # Save 'Wrong' feedback to Firebase
-                db.collection('feedback').document(str(uuid.uuid4())).set({
-                    'message': text,
-                    'prediction': label,
-                    'confidence': prob_spam,
+    # BUTTON 2: WRONG
+    with col2:
+        if st.button("❌ It is Wrong"):
+            st.write("⏳ Saving...") 
+            try:
+                doc_ref = db.collection('feedback').document()
+                doc_ref.set({
+                    'message': st.session_state['last_text'],
+                    'prediction': lbl,
+                    'confidence': score,
                     'user_feedback': 'Wrong',
                     'timestamp': firestore.SERVER_TIMESTAMP
                 })
-                st.session_state[feedback_key] = True
-                st.rerun()
-
-    else:
-        st.success("🎉 Thanks for your help! Feedback saved.")
-
-# Sidebar
-with st.sidebar:
-    st.info("The database is connected!")
-    if st.button("Clear Feedback History (Local)"):
-        st.session_state.clear()
+                st.success(f"Saved to DB! ID: {doc_ref.id}")
+            except Exception as e:
+                st.error(f"Save Failed: {e}")
