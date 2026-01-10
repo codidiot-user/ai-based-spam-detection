@@ -41,7 +41,7 @@ except:
     st.stop()
 
 # --- 3. UI & LOGIC ---
-st.title("🚀 Spam Detector (Live DB)")
+st.title("🚀 Spam Detector")
 
 
 # Main Input
@@ -71,7 +71,7 @@ if st.session_state.get('analyzed'):
     st.subheader(f"Result: {lbl} ({score:.1%})")
     
     st.write("---")
-    st.write("👇 **Click below to save to Database:**")
+    st.write("👇 **Choose any one:**")
     
     col1, col2 = st.columns(2)
     
@@ -109,4 +109,5 @@ if st.session_state.get('analyzed'):
                 st.success(f"Saved to DB! ID: {doc_ref.id}")
             except Exception as e:
                 st.error(f"Save Failed: {e}")
+
 
