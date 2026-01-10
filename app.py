@@ -7,33 +7,7 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 import uuid
 import json
-# --- DEBUG SECTION (PASTE AT TOP OF APP.PY) ---
-st.write("🔧 DEBUG MODE: Testing Database Connection...")
 
-if not firebase_admin._apps:
-    try:
-        # Load keys
-        key_dict = dict(st.secrets["firebase_key"])
-        if "private_key" in key_dict:
-            key_dict["private_key"] = key_dict["private_key"].replace("\\n", "\n")
-        
-        # Connect
-        cred = credentials.Certificate(key_dict)
-        firebase_admin.initialize_app(cred)
-        st.success("✅ 1. Auth Successful")
-    except Exception as e:
-        st.error(f"❌ 1. Auth Failed: {e}")
-
-try:
-    # Force a write test
-    db = firestore.client()
-    db.collection("debug_test").add({"timestamp": firestore.SERVER_TIMESTAMP, "status": "working"})
-    st.success("✅ 2. Write Successful! Check Firestore for 'debug_test' collection.")
-except Exception as e:
-    st.error(f"❌ 2. Write Failed: {e}")
-    st.info("💡 If Auth worked but Write failed, check your IAM Roles in Google Cloud!")
-st.divider()
-# --- END DEBUG SECTION ---
 
 # --- FIXED FIREBASE INITIALIZATION ---
 # --- FIND THIS SECTION IN YOUR APP.PY AND REPLACE IT ---
@@ -152,5 +126,6 @@ if st.button("Detect Spam!") and text.strip():
 # Footer
 st.sidebar.title("About")
 st.sidebar.info("Powered by RoBERTa fine-tuned on 50k SMS messages.")
+
 
 
