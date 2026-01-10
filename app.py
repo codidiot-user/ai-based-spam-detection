@@ -43,15 +43,6 @@ except:
 # --- 3. UI & LOGIC ---
 st.title("🚀 Spam Detector (Live DB)")
 
-# Sidebar DB Test
-with st.sidebar:
-    st.header("Database Status")
-    if st.button("Test Connection"):
-        try:
-            ref = db.collection("feedback").add({"message": "Manual Test", "status": "Online"})
-            st.success(f"Connected! ID: {ref[1].id}")
-        except Exception as e:
-            st.error(f"Error: {e}")
 
 # Main Input
 text = st.text_area("Enter message:", height=100)
@@ -118,3 +109,4 @@ if st.session_state.get('analyzed'):
                 st.success(f"Saved to DB! ID: {doc_ref.id}")
             except Exception as e:
                 st.error(f"Save Failed: {e}")
+
